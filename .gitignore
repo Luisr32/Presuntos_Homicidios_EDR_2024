@@ -47,3 +47,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Microdatos EDR
+data_raw/
+
+#Datos
+data/
+
+#Archivos raw
+*.zip
+*.dbf
