@@ -41,3 +41,9 @@ write_csv(homicidios_2023_2024, "data/homicidios_23_24_min.csv")
 cat("Homicidios 2023:", nrow(hom_2023), "\n")
 cat("Homicidios 2024:", nrow(hom_2024), "\n")
 cat("Total unidos:", nrow(homicidios_2023_2024), "\n")
+
+## Lectura de estrucura de parentezcos
+parentesco_cat <- foreign::read.dbf(".../PARENTESCO.dbf", as.is = TRUE) |> 
+  janitor::clean_names()
+
+head(parentesco_cat)

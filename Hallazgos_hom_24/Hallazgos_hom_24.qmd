@@ -1,0 +1,157 @@
+---
+title: "Pres_Homicidios_2024"
+author: "Luis Ramírez"
+format: html
+editor: visual
+---
+
+## Posibles hallazgos sobre homicidios en 2024.
+
+En este .qmd realizo el analisis bivariado para los casos de presuntos homicidios en la Estadistica de Defunciones Registrados para 2024 publicada por el INEGI. A cintinuación se enlistan los pasos de exploración y hallazgos relevanytes que concluyen con su respectiva visualización.
+
+## Librerías
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(foreign)
+library(janitor)
+library (scales)
+library(dplyr)
+```
+
+## Revisión de datos disponibles
+
+```{r}
+homicidios_23_24 <- readRDS("C:/Users/ramir/OneDrive/Documents/GitHub/Presuntos_Homicidios_EDR_2024/data/homicidios_23_24_min.rds")
+nrow(homicidios_23_24)
+
+# El archivo obtenido de la extracción de microdatos para presuntos homicidios los hice tanto para 2023 como para 2024, por si en algún momento hago un analisis comparativo entre años, de momento agrego esta linea para dejar fijos los homicidios del 2024.
+
+homicidios24 <- homicidios_23_24 |> filter(anio == 2024)
+names(homicidios24)
+```
+
+# Parentezco
+
+Revisión del archivo de PARENTESCO.dbf para entender la relación del código en la base de presuntos homicidios para 2024. En esta parte estaba buscando hacer un analisis bivariado entre el sexo de la persona y su parentesco con el agresor, sin embargo, al revisar los datos, cais la totalidad de los mismos ni tienen un agresor registrado, por lo que no se pueden analizar, o al menos no como lo planteaba. Dejo el código como evidencia.
+
+```{r}
+#Esto me deja ver el catalogo de opciones de posible parentesco entre la víctima y el agresor.
+parentesco <- read.dbf(
+  "C:/Users/ramir/OneDrive/Documents/Luis/Trabajo/Data_Cívica/Segundo Ejercicio/2024EDR/PARENTESCO.dbf",
+  as.is = TRUE
+) |> 
+  clean_names()
+
+#El catalogo es muy grande, pero se puede reagrupar en grupos mas reconocibles integrados por el mismo tipo de parentesco.
+
+homicidios24 <- homicidios24 |>
+  mutate(
+    parentesco_grupo = case_when(
+      par_agre %in% c(11,12,45,46,47,48,49,50,51,52) ~ "Pareja / ex-pareja",
+
+      par_agre %in% c(
+        1:10, 13:44, 53:60, 70
+      ) ~ "Familiar",
+
+      par_agre %in% c(61:69) ~ "Conocido / relación social",
+
+      par_agre %in% c(71,72) ~ "Sin parentesco",
+
+      par_agre %in% c(88,98,99) ~ "No especificado",
+
+      TRUE ~ "No especificado"
+    )
+  )
+
+grupo_resumen <- homicidios24 |>
+  count(parentesco_grupo) |>
+  mutate(porc = n / sum(n))
+
+#El resumen muestra que casi la totalidad de los datos no tienen específicado el agresor, estos datos no pueden ser utilizados para el analisis.
+```
+
+# Lugar de ocurrencia en comparativo por sexo.
+
+Durante la revisión del catalogo de variables de la EDR, encontré la variable de lugar_ocur que desgloza el presunto homicidio por lugar en el que ocurrió. Aqui haré un analisis bivariado entre el sexo (hombre, mujer) y el lugar donde ocurrió el homicidio.
+
+```{r}
+#Revisé la relación en el catalogo de opciones de lugar de ocurrencia, habiendo varios espacios posibles, lo reduje a grupos conjuntos de espacios que se definen entre público y privado, esperando ver si en relación con el sexo hay algun comportamiento diferenciado.
+
+homicidios24 <- homicidios24 |>
+  mutate(
+    # Asegurar tipo
+    lugar_ocur = as.integer(lugar_ocur),
+
+    # Etiquetas de sexo
+    sexo_lbl = case_when(
+      sexo == 1 ~ "Hombres",
+      sexo == 2 ~ "Mujeres",
+      #sexo == 9 ~ "No identificado", 
+      TRUE ~ NA_character_
+    ),
+
+    # Agrupación del lugar de ocurrencia
+    lugar_grp = case_when(
+      lugar_ocur %in% c(1, 2) ~ "Vivienda",
+      lugar_ocur %in% c(3, 4, 5, 6, 7, 8) ~ "Espacio público",
+      lugar_ocur == 9 ~ "Otro",
+      lugar_ocur == 0 ~ "No especificado",
+      TRUE ~ NA_character_
+    )
+  )
+
+   
+
+lugar_resumen <- homicidios24 |>
+  filter(!is.na(lugar_grp)) |>
+  count(sexo, lugar_grp) |>
+  group_by(sexo) |>
+  mutate(porc = n / sum(n))
+```
+
+
+ ### Gráfica
+ 
+```{r}
+cols <- c("Mujeres" = "#BF3EFF", "Hombres" = "#90EE90")
+
+df_plot <- homicidios24 |>
+  filter(sexo_lbl %in% c("Mujeres", "Hombres")) |>
+  filter(!is.na(lugar_grp)) |>
+  count(sexo_lbl, lugar_grp, name = "n") |>
+  group_by(sexo_lbl) |>
+  mutate(
+    porc = n / sum(n),
+    porc_plot = ifelse(sexo_lbl == "Mujeres", -porc, porc)
+  ) |>
+  ungroup() |>
+  mutate(
+    lugar_grp = factor(
+      lugar_grp,
+      levels = c("Vivienda", "Espacio público", "Otro", "No especificado")
+    )
+  )
+
+ggplot(df_plot, aes(x = porc_plot, y = lugar_grp, fill = sexo_lbl)) +
+  geom_col(width = 0.75, color = "grey15", linewidth = 0.3) +
+  scale_fill_manual(values = cols) +
+  scale_x_continuous(
+    labels = percent,
+    breaks = seq(-1, 1, 0.2)
+  ) +
+  labs(
+    title = "Lugar de ocurrencia del homicidio por sexo (2024)",
+    subtitle = "Distribución porcentual dentro de cada sexo",
+    x = "Porcentaje",
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_minimal(base_family = "Montserrat") +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold")
+  )
+```
+ 
