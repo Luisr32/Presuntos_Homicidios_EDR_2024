@@ -18,6 +18,7 @@ library(foreign)
 library(janitor)
 library (scales)
 library(dplyr)
+library (showtext)
 ```
 
 ## Revisión de datos disponibles
@@ -112,19 +113,31 @@ lugar_resumen <- homicidios24 |>
 ```
 
 
- ### Gráfica
+### Acomodo de datos y graficación
  
 ```{r}
 cols <- c("Mujeres" = "#BF3EFF", "Hombres" = "#90EE90")
 
-df_plot <- homicidios24 |>
+homicidios_lugar_sexo24 <- homicidios24 |>
   filter(sexo_lbl %in% c("Mujeres", "Hombres")) |>
   filter(!is.na(lugar_grp)) |>
   count(sexo_lbl, lugar_grp, name = "n") |>
   group_by(sexo_lbl) |>
   mutate(
     porc = n / sum(n),
-    porc_plot = ifelse(sexo_lbl == "Mujeres", -porc, porc)
+    porc_plot = ifelse(sexo_lbl == "Mujeres", -porc, porc),
+    label = percent(porc, accuracy = 0.1),
+    cabe = porc >= 0.10,
+    x_text = ifelse(
+      cabe,
+      porc_plot * 0.55,
+      ifelse(sexo_lbl == "Mujeres", -0.02, 0.02)
+    ),
+    hjust_text = ifelse(
+      cabe,
+      0.5,
+      ifelse(sexo_lbl == "Mujeres", 1, 0)
+    )
   ) |>
   ungroup() |>
   mutate(
@@ -134,13 +147,20 @@ df_plot <- homicidios24 |>
     )
   )
 
-ggplot(df_plot, aes(x = porc_plot, y = lugar_grp, fill = sexo_lbl)) +
+homicidios_lugar_sexo24_plot <- ggplot(
+  homicidios_lugar_sexo24,
+  aes(x = porc_plot, y = lugar_grp, fill = sexo_lbl)
+) +
   geom_col(width = 0.75, color = "grey15", linewidth = 0.3) +
-  scale_fill_manual(values = cols) +
-  scale_x_continuous(
-    labels = percent,
-    breaks = seq(-1, 1, 0.2)
+  geom_text(
+    aes(x = x_text, label = label, hjust = hjust_text),
+    color = "black",
+    family = "Montserrat",
+    fontface = "bold",
+    size = 8.5
   ) +
+  scale_fill_manual(values = cols) +
+  scale_x_continuous(labels = scales::percent, breaks = seq(-1, 1, 0.2)) +
   labs(
     title = "Lugar de ocurrencia del homicidio por sexo (2024)",
     subtitle = "Distribución porcentual dentro de cada sexo",
@@ -150,8 +170,240 @@ ggplot(df_plot, aes(x = porc_plot, y = lugar_grp, fill = sexo_lbl)) +
   ) +
   theme_minimal(base_family = "Montserrat") +
   theme(
-    legend.position = "none",
-    plot.title = element_text(face = "bold")
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 16),
+
+    plot.title = element_text(size = 28, face = "bold"),
+    plot.subtitle = element_text(size = 18),
+
+    axis.title.x = element_text(size = 20, margin = margin(t = 12)),
+    axis.text.x  = element_text(size = 16),
+
+    axis.text.y  = element_text(size = 18),
+
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
   )
 ```
  
+### Guardar graf de homicidios por sexo por lugar donde ocurrió.
+ 
+```{r}
+ggsave(
+  filename = "homicidios_lugar_sexo24.jpeg",
+  plot = homicidios_lugar_sexo24_plot,
+  path = "C:/Users/ramir/OneDrive/Documents/GitHub/Presuntos_Homicidios_EDR_2024/Hallazgos_hom_24",
+  width = 10,
+  height = 6,
+  units = "in",
+  dpi = 200
+)
+```
+
+#Entidad en la que las personas extranjeras 
+Este es un analisis exploratorio de victimas de presunto homicidio con nacionalidad extranjera (=2) en busqueda de comprender si hay relación con personas extranjeras fallecidas y estados en ruta de migración.
+
+### Preparación de datos
+```{r}
+entidades <- c(
+  "Aguascalientes",
+  "Baja California",
+  "Baja California Sur",
+  "Campeche",
+  "Coahuila",
+  "Colima",
+  "Chiapas",
+  "Chihuahua",
+  "Ciudad de México",
+  "Durango",
+  "Guanajuato",
+  "Guerrero",
+  "Hidalgo",
+  "Jalisco",
+  "México",
+  "Michoacán",
+  "Morelos",
+  "Nayarit",
+  "Nuevo León",
+  "Oaxaca",
+  "Puebla",
+  "Querétaro",
+  "Quintana Roo",
+  "San Luis Potosí",
+  "Sinaloa",
+  "Sonora",
+  "Tabasco",
+  "Tamaulipas",
+  "Tlaxcala",
+  "Veracruz",
+  "Yucatán",
+  "Zacatecas"
+)
+
+extranjeros_ent_ocurr24 <- homicidios24 |>
+  #Aqui realizo el filtro de personas con nacionalidad extranjera, excluyendo  a personas mexicanas o sin nacionalidad registrada.
+  filter(nacionalid == 2) |>
+  mutate(ent_ocurr = as.numeric(ent_ocurr)) |>
+  filter(!is.na(ent_ocurr), ent_ocurr >= 1, ent_ocurr <= 32) |>
+  count(ent_ocurr, name = "n") |>
+  mutate(
+    entidad = entidades[ent_ocurr]
+  ) |>
+  arrange(desc(n)) |>
+  slice_head(n = 10) |>
+  mutate(
+    entidad = stringr::str_wrap(entidad, width = 16),
+    entidad = factor(entidad, levels = rev(entidad))
+  )
+```
+
+
+### Graficación
+```{r}
+extranjeros_ent_ocurr24_plot <- ggplot(
+  extranjeros_ent_ocurr24,
+  aes(x = n, y = entidad)
+) +
+  geom_segment(
+    aes(x = 0, xend = n, y = entidad, yend = entidad),
+    linewidth = 1.2,
+    color = "grey65"
+  ) +
+  geom_point(
+    size = 8,
+    color = "#BF3EFF"
+  ) +
+  geom_text(
+    aes(label = n),
+    size = 6,                
+    family = "Montserrat",
+    fontface = "bold",
+    color = "black",
+    hjust = 0.5,
+    vjust = 0.5
+  ) +
+  scale_x_continuous(
+    limits = c(0, max(extranjeros_ent_ocurr24$n) * 1.1),
+    breaks = seq(0, 90, 10)
+  ) +
+  labs(
+    title = "Homicidios de personas extranjeras por entidad (2024)",
+    subtitle = "Entidad donde ocurrió la defunción · Top 10",
+    x = "Número de homicidios de personas extranjeras",
+    y = NULL
+  ) +
+  theme_minimal(base_family = "Montserrat") +
+  theme(
+    plot.title = element_text(size = 29, face = "bold"),
+    plot.subtitle = element_text(size = 30),
+    axis.text.y = element_text(size = 30),
+    axis.text.x = element_text(size = 26),
+    axis.title.x = element_text(size = 32, margin = margin(t = 20)),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+extranjeros_ent_ocurr24_plot
+```
+
+### Guardar graf de top 10 homicidios por entidad para personas de nacionaldiad extranjera.
+```{r}
+ggsave(
+  filename = "extranjeros_ent_ocurr24.jpeg",
+  plot = extranjeros_ent_ocurr24_plot,
+  path = "C:/Users/ramir/OneDrive/Documents/GitHub/Presuntos_Homicidios_EDR_2024/Hallazgos_hom_24",
+  width = 10,
+  height = 6,
+  units = "in",
+  dpi = 200,
+  bg = "white"
+)
+```
+
+#Homicidios para personas racializadas 
+Este es un analisis exploratorio de victimas de presunto homicidio parte de la población racializada mexicana, incluyendo pueblos originarios y afromexicanas.
+
+### Preparación de datos
+```{r}
+racializacion_24 <- homicidios24 |>
+  filter(
+    conindig %in% c(1, 2),
+    afromex %in% c(1, 2)
+  ) |>
+  mutate(
+    racializacion = case_when(
+      conindig == 1 ~ "Personas indígenas",
+      conindig == 2 & afromex == 1 ~ "Personas afromexicanas",
+      TRUE ~ "Personas no racializadas"
+    )
+  ) |>
+  count(racializacion, name = "n") |>
+  mutate(
+    porcentaje = n / sum(n)
+  )
+```
+
+
+### Graficación
+```{r}
+racializacion_plot <- ggplot(
+  racializacion_24,
+  aes(x = racializacion, y = porcentaje, fill = racializacion)
+) +
+  geom_col(
+    width = 0.65,
+    color = "black",
+    linewidth = 0.6
+  ) +
+  geom_text(
+    aes(label = scales::percent(porcentaje, accuracy = 0.1)),
+    vjust = -0.3,
+    size = 14,
+    family = "Montserrat",
+    fontface = "bold",
+    color = "black"
+  ) +
+  scale_y_continuous(
+    labels = scales::percent,
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Personas indígenas" = "#BF3EFF",
+      "Personas afromexicanas" = "#FF8C00",
+      "Personas no racializadas" = "#90EE90"
+    )
+  ) +
+  labs(
+    title = "Homicidios por condición de racialización (2024)",
+    subtitle = "Adscripción indígena y autorreconocimiento afromexicano",
+    x = NULL,
+    y = "Porcentaje"
+  ) +
+  theme_minimal(base_family = "Montserrat") +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 48, face = "bold"),
+    plot.subtitle = element_text(size = 34),
+    axis.text.x = element_text(size = 34),
+    axis.text.y = element_text(size = 30),
+    axis.title.y = element_text(size = 36),
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20)
+  )
+racializacion_plot
+```
+
+### Guardar graf de top 10 homicidios por entidad para personas de nacionaldiad extranjera.
+```{r}
+ggsave(
+  filename = "homicidios_racializacion_24.jpeg",
+  plot = racializacion_plot,
+  path = "C:/Users/ramir/OneDrive/Documents/GitHub/Presuntos_Homicidios_EDR_2024/Hallazgos_hom_24",
+  width = 12,
+  height = 8,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
